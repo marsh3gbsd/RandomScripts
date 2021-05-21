@@ -1,0 +1,254 @@
+#!/bin/bash
+#set -vx
+#DNS Check
+
+usage()
+{
+cat << EOF
+DNS Testing Script
+This script will Run a ping, nslookup, and SNMPGet for the System Name of all provided targets.
+	OPTIONS:
+	-o Output to file in CSV format (Will overwrite any existing file)
+	-i Input File (List of IP Addesses)
+	-s Target Subnet 10.xxx.xxx
+	-a Target Address 10.xxx.xxx.xxx
+	-h Prints this message
+	-p Number of times to try and ping each target (Default: 1)
+	-t Set SNMP timeout for getting the SNMP system name (Default: 1)
+	-r Number of SNMP Retries (Default: 2)
+EOF
+}
+
+overwrite_confirm_dialog() 
+{
+while [[ "$CONFIRM_OVERWRITE" != "y" && "$CONFIRM_OVERWRITE" != "n" ]]
+do
+        read -r -p "File exists!  Overwrite? (y/n)?" CONFIRM_VAR
+        case $CONFIRM_VAR in
+                Y|y) CONFIRM_OVERWRITE="y"; return "1";;
+                N|n) CONFIRM_OVERWRITE="n"; return "2";;
+                *)echo "Invalid Option!";;
+        esac
+done
+}
+
+while getopts ":o:i:s:a:p:t:r:h" OPTION
+do
+	case $OPTION in
+		o)
+		OUTPUT_FILE=$OPTARG
+		if [ -e "$OUTPUT_FILE" ]
+		then
+			overwrite_confirm_dialog
+			if [[ $? == 1 ]]
+			then
+				echo "IP ADDRESS,Ping,SNMPName,DNSName" > $OUTPUT_FILE
+			fi
+		fi
+		;;
+
+		i)
+		INPUT_FILE=$OPTARG
+		;;
+	
+		s)
+		TAR_SUBNET=$OPTARG
+		;;
+
+		a)
+		TAR_ADDR=$OPTARG
+		;;
+		
+		p)
+		PING_NUM=$OPTARG
+		;;
+		
+		t)
+		SNMP_TIMEOUT=$OPTARG
+		;;
+		
+		r)
+		SNMP_RETRIES=$OPTARG
+		;;
+		*)
+		usage
+		;;
+	esac
+done
+
+echo "Input is: $INPUT_FILE"
+if [ -z "$INPUT_FILE" ] && [ -z "$TAR_ADDR" ] && [ -z "$TAR_SUBNET" ]
+then
+	usage
+	exit 1
+fi
+
+if [ -z "$SNMP_TIMEOUT" ]
+then
+	SNMP_TIMEOUT=1
+fi
+if [ -z "$SNMP_RETRIES" ]
+then
+	SNMP_RETRIES=2
+fi
+if [ -z "$PING_NUM" ]
+then
+	PING_NUM=1
+fi
+
+get_info() {
+	ping -c1 -t 1 "$1" >/dev/null 2>&1
+	#If device responds to ping, then grab ping time and SNMP name
+	if [[ $? -eq 0 ]]
+	then
+		RESP_TIME=$(ping -c1 -t 1 "$1" 2>/dev/null | tail -1 | awk '{print $4}' | cut -f1 -d '/')
+		SNMP_NAME=$(snmpget -r$SNMP_RETRIES -t$SNMP_TIMEOUT -Ov -Le -c public "$1" sysName.0 2>/dev/null | awk '{print $2}' )
+		#If SNMP v2c doesn't respond, try SNMP v1 (Minuteman UPSes)
+		if [ ?$ ] 
+		then
+			SNMP_NAME=$(snmpget -v1 -r$SNMP_RETRIES -t$SNMP_TIMEOUT -Ov -Le -c public "$1" sysName.0 2>/dev/null | awk '{print $2}' )
+		fi
+	else 
+		RESP_TIME=""
+		SNMP_NAME=""
+	fi
+	DNS_NAME=$(dig -x "$1" +short)
+	if [[ ! $DNS_NAME ]]
+	then
+		DNS_NAME="NULL"
+	fi
+	echo "responseTime=\"$RESP_TIME\";snmpName=\"$SNMP_NAME\";dnsName=\"$DNS_NAME\""
+}
+
+if [ -f "$INPUT_FILE" ]
+then
+	echo "IP Address,Response Time,SNMPName,DNS Name" >> "$INPUT_FILE"_RESULT.txt
+	echo "IP Addr           Resp Time SNMPName                 DNS Name"
+	while read -r line; do	
+		# ping -c1 -t 1 "$line" >/dev/null 2>&1
+		# if [[ $? -eq 0 ]]
+		# then
+		# 	RESP_TIME=$(ping -c1 -t 1 "$line" 2>/dev/null | tail -1 | awk '{print $4}' | cut -f1 -d '/')
+		# 	SNMP_NAME=$(snmpget -r$SNMP_RETRIES -t$SNMP_TIMEOUT -Ov -Le -c public "$line" sysName.0 2>/dev/null | awk '{print $2}' )
+		# 	#if [ $(dig -x "$line" +short) ]
+		# 	#then
+		# 	#	NSLOOKUP_NAME=$(dig -x "$line" +short)
+		# 	#else
+		# 	#	NSLOOKUP_NAME="NULL"
+		# 	#fi
+		# else 
+		# 	RESP_TIME=""
+		# 	SNMP_NAME=""
+		# fi
+		eval $(get_info $line)
+		echo "$line	$responseTime	$snmpName	$dnsName" >> "$INPUT_FILE"_RESULT.txt
+		printf "%-18s" "$line"
+		printf "%-10s" "$responseTime"
+		printf "%-25s\n" "$snmpName"
+	done < $INPUT_FILE
+elif [[ "$TAR_ADDR" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]
+then
+	echo "IP ADDRESS        PING      SNMP Name                DNS Name"
+	echo "-------------------------------------------------------------------------"      
+	ping -c1 -t 1 "$TAR_ADDR" >/dev/null 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		RESP_TIME=$(ping -c1 -t 1 "$TAR_ADDR" 2>/dev/null | tail -1 | awk '{print $4}' | cut -f1 -d '/')
+		SNMP_NAME=$(snmpget -r$SNMP_RETRIES -t$SNMP_TIMEOUT -Ov -Le -c public "$TAR_ADDR" sysName.0 2>/dev/null | awk '{print $2}' )
+		if [ ! $SNMP_NAME ]
+                then
+                	SNMP_NAME=$(snmpget -v1 -r$SNMP_RETRIES -t$SNMP_TIMEOUT -Ov -Le -c public "$TAR_ADDR" sysName.0 2>/dev/null | awk '{print $2}' )
+                fi
+	else
+		RESP_TIME="--"; SNMP_NAME="--"
+	fi
+	NSLOOKUP_NAME=$(dig -x "$TAR_ADDR" +short)
+	NAME_ARRAY=(${NSLOOKUP_NAME//$'\n'/ })
+	if [[ ! $NSLOOKUP_NAME ]]
+	then
+		NSLOOKUP_NAME="--"
+	fi
+
+	printf "%-18s" "$TAR_ADDR"
+	printf "%-10s" "$RESP_TIME"
+	printf "%-25s" "$SNMP_NAME"
+	printf "%-s\n" "${NAME_ARRAY[0]}"
+	i=1
+	while [[ "$i" -lt "${#NAME_ARRAY[@]}" ]]
+	do
+		printf "%-53s" "" 
+		printf "%-s\n" "${NAME_ARRAY[$1]}"
+		i=$((i+1))
+	done
+	if [ -n "$OUTPUT_FILE" ]
+	then
+		echo "$TAR_ADDR,$RESP_TIME,$SNMP_NAME,$NSLOOKUP_NAME" >> $OUTPUT_FILE
+	fi
+	
+#	Potential change to non double ping: ping $TAR_ADDR -c1 -t 1 | grep "64 bytes" | sed -E 's/^64 .*time=(.*$)/\1/'
+#	if [[ $(ping -c1 -t 1 "$TAR_ADDR") ]]
+#		then RESP_TIME=$(ping -c1 -t 1 $TAR_ADDR | tail -1 | awk '{print $4}' | cut -f1 -d '/')
+#		else RESP_TIME="N/A"
+#	fi	
+#	SNMP_NAME=$(snmpget -Ov -Le -c public "$TAR_ADDR" sysName.0 2>/dev/null | awk '{print $2}' )
+#	if [ $(dig -x "$1" +short) ]
+#	then
+#		NSLOOKUP_NAME=$(dig -x "$TAR_ADDR" +short)
+#	else
+#		NSLOOKUP_NAME="NULL"
+#	fi
+#	printf "%-18s" "$TAR_ADDR"
+#	printf "%-10s" "$RESP_TIME"
+#	printf "%-25s" "$SNMP_NAME"
+#	printf "%-s\n" "$NSLOOKUP_NAME"
+
+elif [[ "$TAR_SUBNET" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]
+then
+	last_octet=1
+	echo "SNMP Timeout is set to: $SNMP_TIMEOUT"
+	echo "SNMP Retries is set to: $SNMP_RETRIES"
+	echo ""
+	
+	echo "IP ADDRESS        PING      SNMP Name                DNS Name"
+	echo "-------------------------------------------------------------------------"      
+	while [ $last_octet -le "255" ]; do
+		ping -c1 -t 1 "$TAR_SUBNET".$last_octet >/dev/null 2>&1
+		if [[ $? -eq 0 ]]
+		then 
+			RESP_TIME=$(ping -c1 -t 1 "$TAR_SUBNET".$last_octet 2>/dev/null | tail -1 | awk '{print $4}' | cut -f1 -d '/')
+			SNMP_NAME=$(snmpget -r$SNMP_RETRIES -t$SNMP_TIMEOUT -Ov -Le -c public "$TAR_SUBNET".$last_octet sysName.0 2>/dev/null | awk '{print $2}' )
+			if [ ! $SNMP_NAME ]
+			then
+				SNMP_NAME=$(snmpget -v1 -r$SNMP_RETRIES -t$SNMP_TIMEOUT -Ov -Le -c public "$TAR_SUBNET".$last_octet sysName.0 2>/dev/null | awk '{print $2}' )
+			fi
+		else 
+			RESP_TIME="--"; SNMP_NAME="--"
+		fi
+        	NSLOOKUP_NAME=$(dig -x "$TAR_SUBNET".$last_octet +short)
+        	NAME_ARRAY=(${NSLOOKUP_NAME//$'\n'/ })
+		NSLOOKUP_NAME=$(echo $NSLOOKUP_NAME | tr "\n" ",")
+	        if [[ ! $NSLOOKUP_NAME ]]
+       	 	then
+              		NSLOOKUP_NAME="--"
+        	fi
+		
+		printf "%-18s" "$TAR_SUBNET.$last_octet"
+		printf "%-10s" "$RESP_TIME"
+		printf "%-25s" "$SNMP_NAME"
+		printf "%-s\n" "${NAME_ARRAY[0]}"
+		i=1
+        	while [[ "$i" -lt "${#NAME_ARRAY[@]}" ]]
+        	do      
+                	printf "%-53s" ""
+                	printf "%-s\n" "${NAME_ARRAY[$1]}"
+                	i=$((i+1))
+        	done
+		if [ -n "$OUTPUT_FILE" ]
+		then
+			echo "$TAR_SUBNET.$last_octet,$RESP_TIME,$SNMP_NAME,$NSLOOKUP_NAME" >> $OUTPUT_FILE
+		fi
+
+		let last_octet=last_octet+1
+	done	
+	
+fi
