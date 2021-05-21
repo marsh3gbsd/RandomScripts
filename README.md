@@ -9,3 +9,12 @@ In order to be of much use, make sure you have:
 - The command you would like to run
 - Username and password for an account with API permissions on the Aruba controllers
 - The address of the Aruba Mobility Master
+
+
+### DNS/SNNMP Scan (dnsscan)
+_Built in Bash on OSX_
+
+Based on options, will scan an IP or a /24 and provide:
+- Ping response time
+- SNMP Name
+- DNS record
