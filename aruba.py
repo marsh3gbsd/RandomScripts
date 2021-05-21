@@ -1,4 +1,7 @@
 #!/usr/bin/python3
+#This script allows you to run a console command against a mobility master or the "MD" switches connected to it
+#If the command does not return any output from the mobility master, it will query each fo the "MD" switches
+#listed by the master, and provide the output from each.  No formatting is done to the output.
 
 import requests
 import urllib
