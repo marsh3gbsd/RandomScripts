@@ -11,7 +11,7 @@ from re import search
 #This supresses all HTTPS cert warnings.  Use with caution
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-#These parameters will need to be changed
+#These parameters can be hard coded as preferred to make it easier to use.
 aruba_user=''
 aruba_pass=''
 aruba_hostname=''
