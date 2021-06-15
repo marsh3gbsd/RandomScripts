@@ -7,6 +7,7 @@ import requests
 import urllib
 import json
 import urllib3
+import getpass
 from re import search
 #This supresses all HTTPS cert warnings.  Use with caution
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -20,7 +21,7 @@ aruba_hostname=''
 if aruba_user == "":
     aruba_user = input("Enter username for aruba devices: ")
 if aruba_pass == "":
-    aruba_pass = input("Enter password for aruba devices: ")
+    aruba_pass = getpass.getpass(prompt="Enter password for aruba devices: ")
 if aruba_hostname == '':
     aruba_hostname = input("Enter ip or dns name for aruba mobility master: ")
 
@@ -32,7 +33,6 @@ base_url = "https://" + aruba_hostname + ":4343"
 def aruba_login(hostname, username, password):
     login = requests.post( hostname + "/v1/api/login", data = {'username': aruba_user, 'password':aruba_pass}, verify=False)
     if "null" in login.headers['Set-Cookie']:
-        print("Cookie empty")
         print("Login failed, check credentials")
         quit()
     else:
@@ -50,7 +50,7 @@ url=base_url + '/v1/configuration/showcommand?command=' + command_parsed + '&UID
 # print('Using cookie: ' + send_cookies['SESSION'] +'<---')   
 #data = {'username': aruba_user, 'password':aruba_pass}, 
 r = requests.get( url, cookies=send_cookies, verify=False)
-print(r.headers)
+# print(r.headers)
 
 if "Content-Length" in r.headers and r.headers["Content-Length"] == "0":
     print('No data returned from Master.  Would you like to try the command against the MD devices listed on the master via "show switches"?')
